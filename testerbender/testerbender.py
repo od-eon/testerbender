@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (C) 2010  Odeon Consulting Group LLC 
+# Copyright (C) 2010  Odeon Consulting Group Pte Ltd ( http://od-eon.com )
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
