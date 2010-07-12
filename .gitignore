@@ -1,0 +1,8 @@
+*.pyc
+*.pyo
+*.swp
+*.swo
+*.*~
+*.bak
+.DS_Store
+testerbender/log
