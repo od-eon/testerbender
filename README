@@ -1,3 +1,5 @@
+testerbender is a test runner useful as a gatekeeper between a test repo and a live one in a continuous integration setup. Currently only git is supported but we plan to add more version control systems in the near future.
+
 working with git:
 - add testerbender/log to .gitignore
 
