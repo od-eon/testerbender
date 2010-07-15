@@ -1,0 +1,7 @@
+These are the post-update hooks for 3 git repositories configured like this:
+- central - receives commits from all the developers and automatically pushes to the "test" repo using the hook
+- test - the hook here sets up a test environment and runs testerbender. If the exit status is 0 (all tests passed), it will push to the live repo
+- live - the repo suited for production use. Only tested code reaches it.
+
+The first 2 repositories can be collapsed into one, but you might want to run the tests on a separated server if they get heavy on the resources.
+
