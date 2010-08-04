@@ -1,8 +1,8 @@
 testerbender is a test runner useful as a gatekeeper between a test repository and a live one in a continuous integration setup. Currently only git is supported but we plan to add more version control systems in the near future.
 
+If you're putting the testerbender/ dir under git control add "testerbender/log" to .gitignore .
+The log timestamps are in UTC.
+
 The project's home page is at http://www.od-eon.com/labs/testerbender/
 For technical support questions contact us at developers@od-eon.com
-
-working with git:
-- add testerbender/log to .gitignore
 

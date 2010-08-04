@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (C) 2010  Odeon Consulting Group Pte Ltd ( http://od-eon.com )
+# Copyright (C) 2010  Odeon Consulting Group LLC 
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -24,6 +24,14 @@ from pprint import pprint
 import csv
 import smtplib
 from email.mime.text import MIMEText
+import urllib2, urllib
+try:
+    import cPickle as pickle
+except:
+    import pickle
+import datetime
+import time
+import re
 
 
 DIR = os.path.abspath(os.path.dirname(__file__))
@@ -62,11 +70,13 @@ def write_data():
 read_data()
 
 # logging
+class UTCFormatter(logging.Formatter):
+    converter = time.gmtime
 logger = logging.getLogger('testerbender')
 logger.setLevel(logging.DEBUG)
 fh = logging.FileHandler(LOG_FILE)
 fh.setLevel(logging.DEBUG)
-formatter = logging.Formatter('[%(asctime)s] %(message)s', '%d/%b/%Y:%H:%M:%S')
+formatter = UTCFormatter('[%(asctime)s] %(message)s', '%d/%b/%Y:%H:%M:%S')
 fh.setFormatter(formatter)
 logger.addHandler(fh)
 
@@ -99,54 +109,108 @@ def send_email(subject, body):
     mailServer.sendmail(EMAIL_FROM, recipients, msg.as_string())
     mailServer.close()
 
-# running the test
-exit_code = 0 # used by the post-update hook
-#logger.info('started')
-os.chdir(TEST_DIR)
-for test_cmd in TEST_CMDS:
-    test_cmd_str = ' '.join(test_cmd)
-    print test_cmd_str
-    p = subprocess.Popen(test_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    output = p.communicate()[0]
-    if p.returncode != 0:
-        # the test failed
-        exit_code = 1
-        # inform the user
-        print output
-        if DATA['broken_commit'] == '':
-            # this is the commit that caused the breakage
-            # log it
-            logger.info('broken commit: %s' % commit)
-            logger.info('broken commit author: %s' % author)
-            # send email
-            body = """
-    broken commit: %s
-    broken commit author: %s
-    test command: %s
-    test output:
-    %s
-            """ % (commit, author, test_cmd_str, output)
-            send_email('tests failed - blame %s [%s]' % (author, commit), body)
-            # update the data
-            DATA['broken_commit'] = commit
-            DATA['broken_commit_author'] = author
-        break
-    else:
-        # the test passed
-        # if a previous broken state was fixed we should mark it as such
-        if DATA['broken_commit'] != '':
-            DATA['broken_commit'] = ''
-            DATA['broken_commit_author'] = ''
-            # log it
-            logger.info('fix commit: %s' % commit)
-            logger.info('fix commit author: %s' % author)
-            # send email
-            body = """
-    fix commit: %s
-    fix commit author: %s
-            """ % (commit, author)
-            send_email('tests passed - praise %s [%s]' % (author, commit), body)
+def log_normal_commit(commit, author):
+    if commit != DATA['last_tested_commit']:
+        logger.info('normal commit: %s' % commit)
+        logger.info('normal commit author: %s' % author)
 
-DATA['last_tested_commit'] = commit
-write_data()
-sys.exit(exit_code)
+def api_call(data):
+    try:
+        f = urllib2.urlopen(STATS_SERVER_URL, urllib.urlencode(data))
+    except urllib2.HTTPError, e:
+        print e.code
+        print e.msg
+        print e.headers
+        print e.fp.read()
+        return False
+
+    response = pickle.loads(f.read())
+    if not response['success']:
+        print 'log uploading failed: %s' % response['msg']
+        return False
+    else:
+        return response
+
+def upload_logs():
+    if not len(API_KEY):
+        return
+    response = api_call({'key': API_KEY, 'action': 'get_last_date'})
+    if response:
+        # upload only the new log entries
+        new_entries = []
+        for line in open(LOG_FILE, 'r'):
+            match = re.search(r'^\[([^\]]+)\] ([^:]+): (.+)$', line)
+            if match:
+                entry_date = datetime.datetime.strptime(match.groups()[0], '%d/%b/%Y:%H:%M:%S')
+                if entry_date > response['last_date']:
+                    new_entries.append(line)
+        if new_entries:
+            #print ''.join(new_entries)
+            response = api_call({'key': API_KEY, 'action': 'upload', 'new_entries': ''.join(new_entries)})
+
+def main():
+    # running the test
+    exit_code = 0 # used by the post-update hook
+    #logger.info('started')
+    os.chdir(TEST_DIR)
+    for test_cmd in TEST_CMDS:
+        test_cmd_str = ' '.join(test_cmd)
+        print test_cmd_str
+        p = subprocess.Popen(test_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        output = p.communicate()[0]
+        if p.returncode != 0:
+            # the test failed
+            exit_code = 1
+            # inform the user
+            print output
+            if DATA['broken_commit'] == '':
+                # this is the commit that caused the breakage
+                # log it
+                logger.info('broken commit: %s' % commit)
+                logger.info('broken commit author: %s' % author)
+                # send email
+                body = """
+        broken commit: %s
+        broken commit author: %s
+        test command: %s
+        test output:
+        %s
+                """ % (commit, author, test_cmd_str, output)
+                send_email('tests failed - blame %s [%s]' % (author, commit), body)
+                # update the data
+                DATA['broken_commit'] = commit
+                DATA['broken_commit_author'] = author
+                NORMAL_COMMIT = False
+            else:
+                NORMAL_COMMIT = True
+            break
+        else:
+            # the test passed
+            # if a previous broken state was fixed we should mark it as such
+            if DATA['broken_commit'] != '':
+                DATA['broken_commit'] = ''
+                DATA['broken_commit_author'] = ''
+                # log it
+                logger.info('fix commit: %s' % commit)
+                logger.info('fix commit author: %s' % author)
+                # send email
+                body = """
+        fix commit: %s
+        fix commit author: %s
+                """ % (commit, author)
+                send_email('tests passed - praise %s [%s]' % (author, commit), body)
+                NORMAL_COMMIT = False
+            else:
+                NORMAL_COMMIT = True
+
+    if NORMAL_COMMIT:
+        log_normal_commit(commit, author)
+    DATA['last_tested_commit'] = commit
+    write_data()
+    upload_logs()
+
+    sys.exit(exit_code)
+
+if __name__ == "__main__":
+    main()
+
